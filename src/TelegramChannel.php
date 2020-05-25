@@ -5,6 +5,9 @@ namespace NotificationChannels\Telegram;
 use Illuminate\Notifications\Notification;
 use NotificationChannels\Telegram\Exceptions\CouldNotSendNotification;
 
+/**
+ * Class TelegramChannel.
+ */
 class TelegramChannel
 {
     /**
@@ -27,8 +30,12 @@ class TelegramChannel
      *
      * @param mixed        $notifiable
      * @param Notification $notification
+     *
+     * @return null|array
+     *
+     * @throws CouldNotSendNotification
      */
-    public function send($notifiable, Notification $notification)
+    public function send($notifiable, Notification $notification): ?array
     {
         $message = $notification->toTelegram($notifiable);
 
@@ -37,34 +44,25 @@ class TelegramChannel
         }
 
         if ($message->toNotGiven()) {
-            if (!$to = $notifiable->routeNotificationFor('telegram')) {
+            if (! $to = $notifiable->routeNotificationFor('telegram')) {
                 throw CouldNotSendNotification::chatIdNotProvided();
             }
 
             $message->to($to);
         }
 
-        if(isset($message->payload['text']) && $message->payload['text'])
-        {
-            $params = $message->toArray();
-            $this->telegram->sendMessage($params);
+        $params = $message->toArray();
+
+        if ($message instanceof TelegramMessage) {
+            $response = $this->telegram->sendMessage($params);
+        } elseif ($message instanceof TelegramLocation) {
+            $response = $this->telegram->sendLocation($params);
+        } elseif ($message instanceof TelegramFile) {
+            $response = $this->telegram->sendFile($params, $message->type, $message->hasFile());
+        } else {
+            return null;
         }
-        elseif (isset($message->payload['latitude']) && isset($message->payload['longitude'])) {
-            $params = $message->toArray();
-            $this->telegram->sendLocation($params);
-        }
-        else
-        {
-            if(isset($message->payload['file']))
-            {
-                $params = $message->toMultipart();
-                $this->telegram->sendFile($params, $message->type, true);
-            }
-            else
-            {
-                $params = $message->toArray();
-                $this->telegram->sendFile($params, $message->type);
-            }
-        }
+
+        return json_decode($response->getBody()->getContents(), true);
     }
 }
